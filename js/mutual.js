@@ -1,11 +1,11 @@
 document.addEventListener("load", init())
 
 // CONFIG AND UTILS
-var extensionCss = `./css/idgaf_style.css`
 var _sideMenuContainerSelector = "xh8yej3 x1iyjqo2";
 var _sideMenu;
 var _retry = 10;
 var _mutualBtnIcon = '<?xml version="1.0" ?><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><style>.cls-1{fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:2px;}</style></defs><title/><g data-name="79-users" id="_79-users"><circle class="cls-1" cx="16" cy="13" r="5"/><path class="cls-1" d="M23,28A7,7,0,0,0,9,28Z"/><path class="cls-1" d="M24,14a5,5,0,1,0-4-8"/><path class="cls-1" d="M25,24h6a7,7,0,0,0-7-7"/><path class="cls-1" d="M12,6a5,5,0,1,0-4,8"/><path class="cls-1" d="M8,17a7,7,0,0,0-7,7H7"/></g></svg>'
+
 
 // GLOBAL VARS
 var followers = [];
@@ -18,13 +18,14 @@ var iDontFollowBack = [];
 var _idgafOverlay;
 var _idgafModal;
 
+
 function init(){
   setupMutualModal();
+  getSideMenuContainer();
   injectMutualBtn();
 }
 
 function injectMutualBtn(){
-  getSideMenuContainer();
   if(_sideMenu != null){
     const mutualBtn = createMutualBtn(); 
     _sideMenu.appendChild(mutualBtn);
@@ -70,32 +71,101 @@ function injectCSS(url){
   document.querySelector("head").appendChild(link);
 }
 
-async function setupMutualModal(){
+function setupMutualModal(){
+  // Create and add overlay
   let body = document.querySelector("body");
   _idgafOverlay = document.createElement("div");
   _idgafOverlay.setAttribute("id", "idgaf_overlay");
   body.appendChild(_idgafOverlay);
 
+  // create and add modal
   _idgafModal = document.createElement("div");
   _idgafModal.setAttribute("id", "idgaf_modal");
 
+  // create and add modal title
   let modalTitle = document.createElement("div");
   modalTitle.setAttribute("id", "idgaf_modal_title");
   modalTitle.innerHTML = "<p>IDGAFollow Results</p>";
   _idgafModal.appendChild(modalTitle);
 
+  // create and add content div
   let modalContent = document.createElement("div");
   modalContent.setAttribute("id", "idgaf_modal_content");
-  modalContent.innerHTML = "<p>IDGAFollow content</p>";
   _idgafModal.appendChild(modalContent);
 
+  // create and add tab system container
+  let modalTabContainer = document.createElement("div");
+  modalTabContainer.setAttribute("id", "idgaf_modal_tab_container");
+  modalContent.appendChild(modalTabContainer);
+
+  // create and add tab system buttons container
+  let modalTabButtonContainer = document.createElement("div");
+  modalTabButtonContainer.setAttribute("id", "idgaf_modal_tab_buttons");
+  modalTabContainer.appendChild(modalTabButtonContainer);
+
+  let tabs = [ 
+    {name: "dontFollowMeBack", label: "Don't follow me back"}, 
+    {name: "iDontFollowBack", label: "I don't follow back"}
+  ];
+
+  // create and add tabs buttons 
+  tabs.forEach((tab)=>{
+    let item = document.createElement("div");
+    item.setAttribute("id", tab.name); 
+    item.setAttribute("class", "tab-btn"); 
+    modalTabButtonContainer.appendChild(item);
+    item.textContent = tab.label
+  })
+
+  // create and add tab system tabs container
+  let modalTabContentsContainer = document.createElement("div");
+  modalTabContentsContainer.setAttribute("id", "idgaf_modal_tab_contents");
+  modalTabContainer.appendChild(modalTabContentsContainer);
+
+  // create and add tabs elements 
+  tabs.forEach((tab)=>{
+    let item = document.createElement("div");
+    item.setAttribute("tab", tab.name); 
+    item.setAttribute("class", "tab-content");
+    modalTabContentsContainer.appendChild(item);
+    item.textContent = tab.name
+  })
+
+  // append entire modal
   _idgafOverlay.appendChild(_idgafModal);
 
+  let buttonsToBind = document.querySelectorAll('.tab-btn');
+
+  buttonsToBind.forEach(btn => {
+    btn.addEventListener('click', function handleClick(event) {
+      console.log(event.target);
+    });
+  });
+}
+
+function switchTab(clickedItem){
+  let tabName = clickedItem.getAttribute("id");
+  if(!clickedItem.classList.contains("active")){
+    let buttons = document.querySelectorAll(".tab-btn");
+    for(let btn of buttons){
+      btn.classList.remove("active");
+    }
+    clickedItem.classList.add("active");
+    let tabs = document.querySelectorAll(".tab-content");
+    for(let tab of tabs){
+      if(tab.getAttribute("tab") != tabName){
+        tab.classList.remove("active");
+      } else {
+        if(!tab.classList.contains("active")){
+          tab.classList.add("active");
+        }
+      }
+    }
+  }
 }
 
 function instanceMutualWindow(e){
   e.preventDefault();
-  console.log("ciao");
   _idgafOverlay.classList.add("show");
 }
 

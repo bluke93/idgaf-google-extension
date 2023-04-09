@@ -52,3 +52,34 @@ button {
   width: 100%;
   height: fit-content;
 }
+
+#idgaf_modal_tab_buttons {
+  display: flex;
+  flex-direction: row;
+  align-content: center;
+  width: 100%;
+}
+
+.tab-btn {
+  width: 50%;
+  text-align: center;
+}
+
+.tab-btn.active {
+  font-weight: bold;
+}
+
+.tab-btn:hover {
+  cursor: pointer;
+
+}
+
+.tab-content {
+  display: none;
+  width: 100%;
+  padding: 15px;
+}
+
+.tab-content.active {
+  display: flex;
+}

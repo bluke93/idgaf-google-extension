@@ -12,10 +12,15 @@
   "host_permissions": ["http://*/*, https://*/*, file:///*", "http://localhost:*", "https://localhost:*"],
   "web_accessible_resources": [
     {
-      "resources": ["./images/*", "./css/*"],
+      "resources": [
+        "./images/*.png", 
+        "./images/*.jpg", 
+        "./images/*.jpeg", 
+        "./css/*.css", 
+        "./templates/*.html"
+      ],
       "matches": ["https://www.instagram.com/*"],
-      "use_dynamic_url": true,
-      "css": ["./css/idgaf_style.css"]
+      "use_dynamic_url": true
     }
   ],
   "content_scripts": [

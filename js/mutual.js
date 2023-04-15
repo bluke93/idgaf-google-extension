@@ -1,82 +1,36 @@
 document.addEventListener("load", init())
 
-// CONFIG AND UTILS
+
 var _sideMenuContainerSelector = "xh8yej3 x1iyjqo2";
 var _sideMenu;
 var _retry = 10;
 var _mutualBtnIcon = '<?xml version="1.0" ?><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><style>.cls-1{fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:2px;}</style></defs><title/><g data-name="79-users" id="_79-users"><circle class="cls-1" cx="16" cy="13" r="5"/><path class="cls-1" d="M23,28A7,7,0,0,0,9,28Z"/><path class="cls-1" d="M24,14a5,5,0,1,0-4-8"/><path class="cls-1" d="M25,24h6a7,7,0,0,0-7-7"/><path class="cls-1" d="M12,6a5,5,0,1,0-4,8"/><path class="cls-1" d="M8,17a7,7,0,0,0-7,7H7"/></g></svg>'
 
-
-// GLOBAL VARS
 var followers = [];
 var followings = [];
 var dontFollowMeBack = [];
 var iDontFollowBack = [];
 
-
-// MODAL
 var _idgafOverlay;
 var _idgafModal;
+var _isLoading = true;
 
 
+// JS initialization
 function init(){
   setupMutualModal();
   getSideMenuContainer();
   injectMutualBtn();
 }
 
-function injectMutualBtn(){
-  if(_sideMenu != null){
-    const mutualBtn = createMutualBtn(); 
-    _sideMenu.appendChild(mutualBtn);
-  } else {
-    setTimeout(injectMutualBtn, 1000);
-  }
-}
-
-function getSideMenuContainer(){
-  const sideMenuContainer = document.getElementsByClassName(_sideMenuContainerSelector);
-  const sideMenu = sideMenuContainer[0];
-  if(typeof sideMenu != "undefined"){
-    _sideMenu = sideMenu;
-  } else {
-    setTimeout(getSideMenuContainer, 1000);
-  }
-}
-
-function createMutualBtn(){
-  if(typeof _sideMenu != null){
-    const originalMenuBtn = _sideMenu.firstChild;
-    const newMenuBtn = originalMenuBtn.cloneNode(true);
-    let labels = newMenuBtn.querySelectorAll('._aacl');
-    for(const label of labels){
-      label.innerHTML = "Mutual"
-    }
-    let icon = newMenuBtn.querySelector('svg._ab6-');
-    icon.innerHTML = _mutualBtnIcon;
-    newMenuBtn.addEventListener("click", instanceMutualWindow, false);
-    return newMenuBtn;
-  } else {
-    setTimeout(createMutualBtn, 1000);
-  }
-}
-
-function injectCSS(url){
-  var link = document.createElement("link");
-  console.log(url);
-  link.href = url;
-  link.type = "text/css";
-  link.rel = "stylesheet";
-  console.log(link);
-  document.querySelector("head").appendChild(link);
-}
-
+// Setup DOM elements
 function setupMutualModal(){
   // Create and add overlay
   let body = document.querySelector("body");
   _idgafOverlay = document.createElement("div");
   _idgafOverlay.setAttribute("id", "idgaf_overlay");
   body.appendChild(_idgafOverlay);
+  _idgafOverlay.addEventListener("click", closeModal);
 
   // create and add modal
   _idgafModal = document.createElement("div");
@@ -85,7 +39,7 @@ function setupMutualModal(){
   // create and add modal title
   let modalTitle = document.createElement("div");
   modalTitle.setAttribute("id", "idgaf_modal_title");
-  modalTitle.innerHTML = "<p>IDGAFollow Results</p>";
+  modalTitle.innerHTML = `<p>${chrome.i18n.getMessage("results")}</p>`;
   _idgafModal.appendChild(modalTitle);
 
   // create and add content div
@@ -104,8 +58,8 @@ function setupMutualModal(){
   modalTabContainer.appendChild(modalTabButtonContainer);
 
   let tabs = [ 
-    {name: "dontFollowMeBack", label: "Don't follow me back"}, 
-    {name: "iDontFollowBack", label: "I don't follow back"}
+    {name: "dontFollowMeBack", label: chrome.i18n.getMessage("dontFollowMeBack")}, 
+    {name: "iDontFollowBack", label: chrome.i18n.getMessage("iDontFollowBack")}
   ];
 
   // create and add tabs buttons 
@@ -125,25 +79,82 @@ function setupMutualModal(){
   // create and add tabs elements 
   tabs.forEach((tab)=>{
     let item = document.createElement("div");
-    item.setAttribute("tab", tab.name); 
+    item.setAttribute("id", `${tab.name}_tab`);
+    item.setAttribute("tab", tab.name);
     item.setAttribute("class", "tab-content");
     modalTabContentsContainer.appendChild(item);
-    item.textContent = tab.name
+    item.innerHTML = "<p>Retrieving the list of your followers and follows.<br/>Please wait as it may take some time based on the total number of results.</p>";
   })
 
   // append entire modal
   _idgafOverlay.appendChild(_idgafModal);
 
+  // Bind click events on tab buttons to allow switch tab
   let buttonsToBind = document.querySelectorAll('.tab-btn');
-
   buttonsToBind.forEach(btn => {
-    btn.addEventListener('click', function handleClick(event) {
-      console.log(event.target);
-    });
+    btn.addEventListener('click', switchTab);
   });
 }
 
-function switchTab(clickedItem){
+function createMutualBtn(){
+  if(typeof _sideMenu != null){
+    // Get first menu item
+    const originalMenuBtn = _sideMenu.firstChild;
+
+    // clone it
+    const newMenuBtn = originalMenuBtn.cloneNode(true);
+
+    // get all labels and replace
+    let labels = newMenuBtn.querySelectorAll('._aacl');
+    for(const label of labels){
+      label.innerHTML = "Mutual"
+    }
+
+    // get icon and replace
+    let icon = newMenuBtn.querySelector('svg._ab6-');
+    icon.innerHTML = _mutualBtnIcon;
+
+    // attach new functionality and return
+    newMenuBtn.addEventListener("click", openMutualWindow);
+    return newMenuBtn;
+  } else {
+    // retry if not found
+    setTimeout(createMutualBtn, 1000);
+  }
+}
+
+function getSideMenuContainer(){
+  // get menu
+  const sideMenuContainer = document.getElementsByClassName(_sideMenuContainerSelector);
+  const sideMenu = sideMenuContainer[0];
+  if(typeof sideMenu != "undefined"){
+    _sideMenu = sideMenu;
+  } else {
+    // retry if not found
+    setTimeout(getSideMenuContainer, 1000);
+  }
+}
+
+function injectMutualBtn(){
+  if(_sideMenu != null){
+    // create the new button and inject it into the menu
+    const mutualBtn = createMutualBtn(); 
+    _sideMenu.appendChild(mutualBtn);
+  } else {
+    // retry if fail
+    setTimeout(injectMutualBtn, 1000);
+  }
+}
+
+function openMutualWindow(e){
+  e.preventDefault();
+  openModal();
+  loadMutual();
+}
+
+// modal actions
+function switchTab(event){
+  const clickedItem = event.target;
   let tabName = clickedItem.getAttribute("id");
   if(!clickedItem.classList.contains("active")){
     let buttons = document.querySelectorAll(".tab-btn");
@@ -164,14 +175,10 @@ function switchTab(clickedItem){
   }
 }
 
-function instanceMutualWindow(e){
-  e.preventDefault();
-  _idgafOverlay.classList.add("show");
-}
 
-async function openMutualWindow(e){
+
+async function loadMutual(){
   // Avoid redirect from link
-  e.preventDefault();
   const username = window.location.pathname;
   (async () => {
     try {
@@ -261,7 +268,16 @@ async function openMutualWindow(e){
         );
       });
 
+      let parentDiv1 = document.getElementById("dontFollowMeBack_tab");
+      parentDiv1.innerHTML = "";
+      dontFollowMeBack.forEach(user => {
+        let userItem = createUserItem(user, "unfollow");
+        parentDiv1.appendChild(userItem);
+      })
+
       console.log({ dontFollowMeBack });
+
+      
 
       iDontFollowBack = followers.filter((follower) => {
         return !followings.find(
@@ -269,27 +285,105 @@ async function openMutualWindow(e){
         );
       });
 
+      let parentDiv2 = document.getElementById("iDontFollowBack_tab");
+      parentDiv2.innerHTML = "";
+      iDontFollowBack.forEach(user => {
+        let userItem = createUserItem(user, "follow");
+        parentDiv2.appendChild(userItem);
+      })
+
       console.log({ iDontFollowBack });
 
-      console.log(
-        `Process is done: Type 'copy(followers)' or 'copy(followings)' or 'copy(dontFollowBack)' in the console and paste it into a text editor to take a look at it'`
-      );
+      _isLoading = false;
+
+      
     } catch (err) {
       console.log({ err });
     }
   })();
 }
 
-function checkUrl(){
-  
+function closeModal(event){
+  if(event.target === this){
+    followers = [];
+    follows = [];
+    iDontFollowBack = [];
+    dontFollowMeBack = [];
+    _idgafOverlay.classList.remove("show");
+  }
 }
 
+function openModal(){
+  _isLoading = true;
+  // reset all tabs
+  let allTabBtns = _idgafModal.querySelectorAll('.tab-btn');
+  allTabBtns.forEach(item => {
+    item.classList.remove('active');
+  })
+  let allTabContents = _idgafModal.querySelectorAll('.tab-content');
+  allTabContents.forEach(item => {
+    item.classList.remove('active');
+  })
 
-async function getFollowList(){
+  // activate first tab
+  let tabBtn = _idgafModal.querySelector('.tab-btn');
+  tabBtn.classList.add('active');
+  let tabContent = _idgafModal.querySelector('.tab-content');
+  tabContent.classList.add('active');
 
+  // show modal
+  _idgafOverlay.classList.add("show");
 }
 
+function createUserItem(user, action){
+  // Create user item container
+  let userItem = document.createElement("div");
+  userItem.setAttribute("id", `user_${user.id}`);
+  userItem.classList.add("idgaf_user_item");
 
-async function getFollowersList(){
+  // create user profile pic
+  let profilePic = document.createElement("img");
+  profilePic.classList.add("profile_pic");
+  profilePic.src = user.profile_pic_url;
+  userItem.appendChild(profilePic);
 
+  // create container for username and fullname
+  let profileNames = document.createElement("div");
+  profileNames.classList.add("profile_names");
+
+  // create username
+  let username = document.createElement("a");
+  username.classList.add("username");
+  username.setAttribute("href", `https://www.instagram.com/${user.username}/`);
+  username.setAttribute("target", "_blank")
+  username.textContent = user.username;
+
+  // create fullname
+  let fullname = document.createElement("a");
+  fullname.classList.add("full_name");
+  fullname.setAttribute("href", `https://www.instagram.com/${user.username}/`);
+  fullname.setAttribute("target", "_blank")
+  fullname.textContent = user.full_name;
+
+  profileNames.appendChild(username);
+  profileNames.appendChild(fullname);
+  userItem.appendChild(profileNames);
+
+  // create action container
+  let actions = document.createElement("div");
+  actions.classList.add("actions");
+
+  let primaryAction = document.createElement("div");
+  primaryAction.classList.add("action_btn", "primary");
+  primaryAction.textContent = chrome.i18n.getMessage(action);
+
+  let goToProfile = document.createElement("div");
+  goToProfile.classList.add("action_btn", "secondary");
+  goToProfile.textContent = chrome.i18n.getMessage("goToProfile");
+
+  actions.appendChild(primaryAction);
+  actions.appendChild(goToProfile);
+  userItem.appendChild(actions);
+
+  return userItem;
 }

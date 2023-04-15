@@ -4,5 +4,23 @@
   },
   "appDescription": {
     "message": "Chrome extension to track mutual followers on instagram!"
+  },
+  "results": {
+    "message": "IDGAFollow Results" 
+  },
+  "dontFollowMeBack": {
+    "message": "People not following me back 😱"
+  },
+  "iDontFollowBack": {
+    "message": "People I don't follow back 🙈"
+  },
+  "unfollow": {
+    "message": "Unfollow"
+  },
+  "follow": {
+    "message": "follow"
+  },
+  "goToProfile": {
+    "message": "Got to profile"
   }
 }

@@ -26,11 +26,12 @@ button {
 }
 
 #idgaf_modal {
+  -webkit-box-shadow: 1px 1px 5px 0px rgba(0,0,0,0.6);
+  box-shadow: 1px 1px 5px 0px rgba(0, 0, 0, 0.6);
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 675px;
   background-color: #fff;
   border-radius: 15px;
   border: 1px solid rgba(0,0,0,0.6);
@@ -38,6 +39,9 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  width: 675px;
+  min-height: 200px;
+  max-height: 70%;
 }
 
 #idgaf_modal_title {
@@ -49,8 +53,9 @@ button {
 
 #idgaf_modal_content{
   text-align: left;
-  width: 100%;
+  width: auto;
   height: fit-content;
+
 }
 
 #idgaf_modal_tab_buttons {
@@ -58,28 +63,118 @@ button {
   flex-direction: row;
   align-content: center;
   width: 100%;
+  border-top: 1px solid #d1d1d1;
+  border-bottom: 1px solid #d1d1d1;
+  -webkit-box-shadow: 0px 5px 10px 0px rgba(0, 0, 0, 0.3);
+  box-shadow: 0px 5px 10px 0px rgba(0, 0, 0, 0.3);
 }
 
 .tab-btn {
+  margin-top: -1px;
+  padding: 10px;
   width: 50%;
   text-align: center;
 }
 
 .tab-btn.active {
+  border-top: 1px solid #000;
   font-weight: bold;
+
 }
 
 .tab-btn:hover {
   cursor: pointer;
-
 }
 
 .tab-content {
   display: none;
   width: 100%;
-  padding: 15px;
+  flex-direction: column;
+  overflow: hidden scroll;
+  padding: 0;
+  height: 500px;
 }
 
 .tab-content.active {
   display: flex;
+}
+
+
+/* USER ELEMENT  */
+.user_list {
+  display: flex;
+  flex-direction: column;
+}
+
+.idgaf_user_item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #d1d1d1;
+  border-top: 1px solid #d1d1d1;
+  margin-top: -1px;
+  padding: 10px 0;
+}
+
+.idgaf_user_item .profile_pic {
+  border-radius: 100%;
+  width: 64px;
+  height: 64px;
+  margin-left: 10px;
+}
+
+.idgaf_user_item .profile_names {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  width: 40%;
+}
+
+.idgaf_user_item .profile_names .username {
+  color: #000;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.idgaf_user_item .profile_names .full_name {
+  color: #737373;
+  text-decoration: none;
+  font-size: 16px;
+}
+
+.idgaf_user_item .actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+}
+
+.idgaf_user_item .actions .action_btn {
+  padding: 7px 16px;
+  border-radius: 8px;
+  margin-right: 10px;
+  font-weight: bold;
+}
+
+.idgaf_user_item .actions .action_btn:hover {
+  cursor: pointer;
+}
+
+.idgaf_user_item .actions .action_btn.primary {
+  background: #0095f6;
+  color: #ffffff;
+}
+
+.idgaf_user_item .actions .action_btn.primary:hover {
+  background: #1877f2;
+}
+
+.idgaf_user_item .actions .action_btn.secondary {
+  background: #efefef;
+  color: #000000;
+}
+
+.idgaf_user_item .actions .action_btn.secondary:hover {
+  background: #dbdbdb;
 }

@@ -5,7 +5,6 @@
 **ONLY WEB VERSION**
 
 **This extension was created as an opportunity to experiment with Google Chrome extensions and to study their limits and capabilities...**  ~~also sometimes i'm a bit prickly~~
-To be fair 
 
 This Google Chrome extension scans the currently displayed Instagram profile and compares the lists of followers and following. It highlights users who are not mutuals, helping you manage your connections more effectively. The extension does **not require any email or password** to run. It uses your **own authenticated session** to make API calls and scrape the follower/following lists, and it only works with public profiles that you have access to.
 Enjoy questioning your "friendships" if you find out some of them are not mutual ;)

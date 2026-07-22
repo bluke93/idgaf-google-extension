@@ -22,5 +22,26 @@
   },
   "goToProfile": {
     "message": "Got to profile"
+  },
+  "stepFollowers": {
+    "message": "Followers"
+  },
+  "stepFollowing": {
+    "message": "Following"
+  },
+  "stepComparing": {
+    "message": "Comparing…"
+  },
+  "stepReady": {
+    "message": "Ready."
+  },
+  "stopBtn": {
+    "message": "Stop"
+  },
+  "refreshBtn": {
+    "message": "Refresh"
+  },
+  "stoppedMessage": {
+    "message": "Stopped."
   }
 }

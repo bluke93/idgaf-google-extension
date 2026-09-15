@@ -655,6 +655,7 @@ function setTabCount(tabName, count) {
 function startLoad() {
   resetData();
   resetSteps();
+  _throttled = false;
   _pageDelayMultiplier = 1;
   hideStatusMessage();
   _hasLoaded = false;
@@ -692,17 +693,29 @@ var IG_APP_ID = "936619743392459";
 var IG_FOLLOWERS_PAGE_SIZE = 25;
 var IG_FOLLOWING_PAGE_SIZE = 200;
 
-// Instagram throttles bursts of list requests, so pages are spaced out with a
-// jittered pause.
-var IG_PAGE_DELAY_MIN_MS = 300;
-var IG_PAGE_DELAY_MAX_MS = 600;
+// The following list takes a numeric max_id offset, so its windows can be
+// requested in parallel rather than chained. Followers only accepts the opaque
+// cursor it hands back (a numeric max_id there answers 400), so that list
+// stays strictly sequential.
+var IG_FOLLOWING_CONCURRENCY = 5;
+
+// Pages run back to back; 25 consecutive requests drew no throttling. The
+// pause below only kicks in once Instagram has actually pushed back, via
+// _pageDelayMultiplier.
+var IG_PAGE_DELAY_MIN_MS = 0;
+var IG_PAGE_DELAY_MAX_MS = 120;
+
+// Once throttled, fall back to the pacing the community scripts use.
+var IG_THROTTLED_DELAY_MIN_MS = 800;
+var IG_THROTTLED_DELAY_MAX_MS = 1500;
 
 // Backoff used when Instagram answers 429 (rate limited).
 var IG_RETRY_DELAY_MS = 5000;
 var IG_MAX_RETRIES = 2;
 
-// Raised after a 429 so the rest of the run paces itself more slowly instead
-// of hammering a limit we've already hit.
+// Set once Instagram answers 429, so the rest of the run paces itself instead
+// of hammering a limit we've already found.
+var _throttled = false;
 var _pageDelayMultiplier = 1;
 
 // Paths that look like a profile but aren't one.
@@ -743,10 +756,9 @@ function sleep(ms, signal) {
 }
 
 function pageDelay() {
-  const jittered =
-    IG_PAGE_DELAY_MIN_MS +
-    Math.floor(Math.random() * (IG_PAGE_DELAY_MAX_MS - IG_PAGE_DELAY_MIN_MS));
-  return jittered * _pageDelayMultiplier;
+  const min = _throttled ? IG_THROTTLED_DELAY_MIN_MS : IG_PAGE_DELAY_MIN_MS;
+  const max = _throttled ? IG_THROTTLED_DELAY_MAX_MS : IG_PAGE_DELAY_MAX_MS;
+  return (min + Math.floor(Math.random() * (max - min))) * _pageDelayMultiplier;
 }
 
 // Retries 429s with a fixed backoff; any other non-OK status is fatal.
@@ -756,8 +768,9 @@ async function igFetch(url, signal, label) {
     if (res.ok) return res.json();
 
     if (res.status === 429 && attempt < IG_MAX_RETRIES) {
-      // We've found the limit: slow every later page down too.
-      _pageDelayMultiplier = Math.min(_pageDelayMultiplier * 3, 9);
+      // We've found the limit: pace every later page from here on.
+      _throttled = true;
+      _pageDelayMultiplier = Math.min(_pageDelayMultiplier * 2, 4);
       await sleep(IG_RETRY_DELAY_MS, signal);
       continue;
     }
@@ -798,35 +811,79 @@ async function fetchUserId(username, signal) {
   return String(hit.user.pk);
 }
 
-// kind is "followers" or "following"; the endpoint pages through max_id
-// cursors and stops returning one on the last page.
-async function fetchFriendshipList(userId, kind, signal, onProgress) {
-  const users = [];
+function listUrl(userId, kind, pageSize, maxId) {
+  const url = new URL(`https://www.instagram.com/api/v1/friendships/${userId}/${kind}/`);
+  url.searchParams.set("count", String(pageSize));
+  url.searchParams.set("search_surface", "follow_list_page");
+  if (maxId !== null && maxId !== undefined) url.searchParams.set("max_id", maxId);
+  return url;
+}
+
+// Keyed by id: pages fetched out of order (or while someone follows/unfollows
+// mid-scan) can repeat a user, and the same list must not count them twice.
+function collectUsers(target, page) {
+  (page.users || []).forEach((user) => {
+    target.set(String(user.pk), {
+      id: String(user.pk),
+      username: user.username,
+      full_name: user.full_name,
+      profile_pic_url: user.profile_pic_url,
+    });
+  });
+}
+
+// Followers hands back an opaque cursor, so its pages have to be walked one
+// at a time — each request depends on the previous response.
+async function fetchFollowers(userId, signal, onProgress) {
+  const byId = new Map();
   let maxId = null;
 
-  const pageSize = kind === "followers" ? IG_FOLLOWERS_PAGE_SIZE : IG_FOLLOWING_PAGE_SIZE;
+  while (true) {
+    const page = await igFetch(
+      listUrl(userId, "followers", IG_FOLLOWERS_PAGE_SIZE, maxId),
+      signal,
+      "followers"
+    );
+    collectUsers(byId, page);
+    onProgress(byId.size);
+
+    maxId = page.next_max_id;
+    if (!maxId) return Array.from(byId.values());
+
+    const delay = pageDelay();
+    if (delay) await sleep(delay, signal);
+  }
+}
+
+// Following takes a numeric offset, so whole windows can be fetched at once.
+async function fetchFollowing(userId, signal, onProgress) {
+  const byId = new Map();
+  let offset = 0;
 
   while (true) {
-    const url = new URL(`https://www.instagram.com/api/v1/friendships/${userId}/${kind}/`);
-    url.searchParams.set("count", String(pageSize));
-    url.searchParams.set("search_surface", "follow_list_page");
-    if (maxId) url.searchParams.set("max_id", maxId);
+    const offsets = [];
+    for (let i = 0; i < IG_FOLLOWING_CONCURRENCY; i++) {
+      offsets.push(offset + i * IG_FOLLOWING_PAGE_SIZE);
+    }
 
-    const json = await igFetch(url, signal, kind);
-    (json.users || []).forEach((user) => {
-      users.push({
-        id: String(user.pk),
-        username: user.username,
-        full_name: user.full_name,
-        profile_pic_url: user.profile_pic_url,
-      });
-    });
-    onProgress(users.length);
+    const pages = await Promise.all(
+      offsets.map((at) =>
+        igFetch(listUrl(userId, "following", IG_FOLLOWING_PAGE_SIZE, at), signal, "following")
+      )
+    );
 
-    maxId = json.next_max_id;
-    if (!maxId) return users;
+    // Stop on a batch that adds nobody rather than on the first short page:
+    // a page can come back short mid-list, and ending there would silently
+    // truncate the list. One wasted batch is cheaper than missing users.
+    const before = byId.size;
+    pages.forEach((page) => collectUsers(byId, page));
+    onProgress(byId.size);
 
-    await sleep(pageDelay(), signal);
+    if (byId.size === before) return Array.from(byId.values());
+    offset += IG_FOLLOWING_CONCURRENCY * IG_FOLLOWING_PAGE_SIZE;
+
+    const delay = pageDelay();
+    if (delay) await sleep(delay, signal);
   }
 }
 
@@ -844,13 +901,13 @@ async function loadMutual() {
 
     const userId = await fetchUserId(username, signal);
 
-    followers = await fetchFriendshipList(userId, "followers", signal, (count) =>
+    followers = await fetchFollowers(userId, signal, (count) =>
       setStep("followers", "active", count)
     );
     setStep("followers", "done", followers.length);
 
     setStep("following", "active");
-    followings = await fetchFriendshipList(userId, "following", signal, (count) =>
+    followings = await fetchFollowing(userId, signal, (count) =>
       setStep("following", "active", count)
     );
     setStep("following", "done", followings.length);

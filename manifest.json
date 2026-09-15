@@ -4,21 +4,6 @@
   "version": "1.0",
   "manifest_version": 3,
   "default_locale": "en",
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self';"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "./images/*.png",
-        "./images/*.jpg",
-        "./images/*.jpeg",
-        "./templates/*.html"
-      ],
-      "matches": ["https://www.instagram.com/*"],
-      "use_dynamic_url": true
-    }
-  ],
   "content_scripts": [
     {
       "matches": ["https://www.instagram.com/*"],
@@ -27,8 +12,7 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "More info about this extension",
+    "default_title": "__MSG_appTitle__",
     "default_icon": {
       "16": "./images/icon_16.png",
       "32": "./images/icon_32.png",

@@ -655,6 +655,7 @@ function setTabCount(tabName, count) {
 function startLoad() {
   resetData();
   resetSteps();
+  _pageDelayMultiplier = 1;
   hideStatusMessage();
   _hasLoaded = false;
   _isLoading = true;
@@ -681,100 +682,178 @@ function finishLoad() {
   _idgafModal.classList.add("state-ready");
 }
 
+// Instagram's web client identifies itself with this app id on every
+// /api/v1/ call; without it the endpoints answer 401/403.
+var IG_APP_ID = "936619743392459";
+
+// Page sizes are what each endpoint actually honours: the followers list is
+// capped at 25 rows server-side whatever you ask for, while following returns
+// up to 200 and answers 400 above that.
+var IG_FOLLOWERS_PAGE_SIZE = 25;
+var IG_FOLLOWING_PAGE_SIZE = 200;
+
+// Instagram throttles bursts of list requests, so pages are spaced out with a
+// jittered pause.
+var IG_PAGE_DELAY_MIN_MS = 300;
+var IG_PAGE_DELAY_MAX_MS = 600;
+
+// Backoff used when Instagram answers 429 (rate limited).
+var IG_RETRY_DELAY_MS = 5000;
+var IG_MAX_RETRIES = 2;
+
+// Raised after a 429 so the rest of the run paces itself more slowly instead
+// of hammering a limit we've already hit.
+var _pageDelayMultiplier = 1;
+
+// Paths that look like a profile but aren't one.
+var _reservedPaths = [
+  "explore",
+  "direct",
+  "reels",
+  "reel",
+  "stories",
+  "accounts",
+  "p",
+  "tv",
+  "about",
+  "legal",
+  "your_activity",
+];
+
+function igHeaders() {
+  return { "x-ig-app-id": IG_APP_ID, "x-requested-with": "XMLHttpRequest" };
+}
+
+// Abortable sleep, so the Stop button also interrupts a pause between pages.
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const abortError = () => new DOMException("Aborted", "AbortError");
+    if (signal.aborted) return reject(abortError());
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function pageDelay() {
+  const jittered =
+    IG_PAGE_DELAY_MIN_MS +
+    Math.floor(Math.random() * (IG_PAGE_DELAY_MAX_MS - IG_PAGE_DELAY_MIN_MS));
+  return jittered * _pageDelayMultiplier;
+}
+
+// Retries 429s with a fixed backoff; any other non-OK status is fatal.
+async function igFetch(url, signal, label) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers: igHeaders(), credentials: "include", signal });
+    if (res.ok) return res.json();
+
+    if (res.status === 429 && attempt < IG_MAX_RETRIES) {
+      // We've found the limit: slow every later page down too.
+      _pageDelayMultiplier = Math.min(_pageDelayMultiplier * 3, 9);
+      await sleep(IG_RETRY_DELAY_MS, signal);
+      continue;
+    }
+    if (res.status === 429) {
+      throw new Error("Instagram is rate limiting this session. Wait a minute and retry.");
+    }
+    throw new Error(`${label} request failed (HTTP ${res.status}).`);
+  }
+}
+
+// The profile being scanned is the one in the URL, e.g. /username/
+function getProfileUsername() {
+  const segments = window.location.pathname.split("/").filter(Boolean);
+  if (segments.length !== 1 || _reservedPaths.includes(segments[0])) return null;
+  return segments[0];
+}
+
+// Search is used instead of /users/web_profile_info/ because the latter is
+// aggressively rate limited (429) while topsearch is not.
+async function fetchUserId(username, signal) {
+  const json = await igFetch(
+    `https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&include_reel=false&query=${encodeURIComponent(
+      username
+    )}`,
+    signal,
+    "Profile lookup"
+  );
+
+  // Search is fuzzy, so match the username exactly rather than trusting the
+  // first hit, which can be a different account.
+  const hit = (json.users || []).find(
+    (entry) =>
+      entry.user &&
+      entry.user.username &&
+      entry.user.username.toLowerCase() === username.toLowerCase()
+  );
+  if (!hit) throw new Error(`Could not find the profile "${username}".`);
+  return String(hit.user.pk);
+}
+
+// kind is "followers" or "following"; the endpoint pages through max_id
+// cursors and stops returning one on the last page.
+async function fetchFriendshipList(userId, kind, signal, onProgress) {
+  const users = [];
+  let maxId = null;
+
+  const pageSize = kind === "followers" ? IG_FOLLOWERS_PAGE_SIZE : IG_FOLLOWING_PAGE_SIZE;
+
+  while (true) {
+    const url = new URL(`https://www.instagram.com/api/v1/friendships/${userId}/${kind}/`);
+    url.searchParams.set("count", String(pageSize));
+    url.searchParams.set("search_surface", "follow_list_page");
+    if (maxId) url.searchParams.set("max_id", maxId);
+
+    const json = await igFetch(url, signal, kind);
+    (json.users || []).forEach((user) => {
+      users.push({
+        id: String(user.pk),
+        username: user.username,
+        full_name: user.full_name,
+        profile_pic_url: user.profile_pic_url,
+      });
+    });
+    onProgress(users.length);
+
+    maxId = json.next_max_id;
+    if (!maxId) return users;
+
+    await sleep(pageDelay(), signal);
+  }
+}
+
 async function loadMutual() {
-  // Avoid redirect from link
-  const username = window.location.pathname;
+  const username = getProfileUsername();
   _abortController = new AbortController();
   const signal = _abortController.signal;
 
   try {
+    if (!username) {
+      throw new Error("Open a profile page (instagram.com/username/) and try again.");
+    }
+
     setStep("followers", "active");
 
-    const userQueryRes = await fetch(
-      `https://www.instagram.com/web/search/topsearch/?query=${username}`,
-      { signal }
+    const userId = await fetchUserId(username, signal);
+
+    followers = await fetchFriendshipList(userId, "followers", signal, (count) =>
+      setStep("followers", "active", count)
     );
-
-    const userQueryJson = await userQueryRes.json();
-
-    const userId = userQueryJson.users[0].user.pk;
-
-    let after = null;
-    let has_next = true;
-
-    while (has_next) {
-      await fetch(
-        `https://www.instagram.com/graphql/query/?query_hash=c76146de99bb02f6415203be841dd25a&variables=` +
-          encodeURIComponent(
-            JSON.stringify({
-              id: userId,
-              include_reel: true,
-              fetch_mutual: true,
-              first: 50,
-              after: after,
-            })
-          ),
-        { signal }
-      )
-        .then((res) => res.json())
-        .then((res) => {
-          has_next = res.data.user.edge_followed_by.page_info.has_next_page;
-          after = res.data.user.edge_followed_by.page_info.end_cursor;
-          followers = followers.concat(
-            res.data.user.edge_followed_by.edges.map(({ node }) => {
-              return {
-                id: node.id,
-                username: node.username,
-                full_name: node.full_name,
-                profile_pic_url: node.profile_pic_url,
-              };
-            })
-          );
-        });
-      setStep("followers", "active", followers.length);
-    }
-
     setStep("followers", "done", followers.length);
-    console.log({ followers });
 
     setStep("following", "active");
-    after = null;
-    has_next = true;
-
-    while (has_next) {
-      await fetch(
-        `https://www.instagram.com/graphql/query/?query_hash=d04b0a864b4b54837c0d870b0e77e076&variables=` +
-          encodeURIComponent(
-            JSON.stringify({
-              id: userId,
-              include_reel: true,
-              fetch_mutual: true,
-              first: 50,
-              after: after,
-            })
-          ),
-        { signal }
-      )
-        .then((res) => res.json())
-        .then((res) => {
-          has_next = res.data.user.edge_follow.page_info.has_next_page;
-          after = res.data.user.edge_follow.page_info.end_cursor;
-          followings = followings.concat(
-            res.data.user.edge_follow.edges.map(({ node }) => {
-              return {
-                id: node.id,
-                username: node.username,
-                full_name: node.full_name,
-                profile_pic_url: node.profile_pic_url,
-              };
-            })
-          );
-        });
-      setStep("following", "active", followings.length);
-    }
-
+    followings = await fetchFriendshipList(userId, "following", signal, (count) =>
+      setStep("following", "active", count)
+    );
     setStep("following", "done", followings.length);
-    console.log({ followings });
 
     setStep("compare", "active");
 
@@ -786,7 +865,6 @@ async function loadMutual() {
       return !followings.find((following) => following.id === follower.id);
     });
 
-    console.log({ dontFollowMeBack, iDontFollowBack });
     setStep("compare", "done");
 
     setStep("ready", "done");
@@ -796,7 +874,7 @@ async function loadMutual() {
     if (err && err.name === "AbortError") {
       showStopped();
     } else {
-      console.log({ err });
+      console.error("[IDGAFollow]", err);
       showLoadError(err);
     }
   }

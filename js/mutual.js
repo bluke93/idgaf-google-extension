@@ -788,27 +788,21 @@ function getProfileUsername() {
   return segments[0];
 }
 
-// Search is used instead of /users/web_profile_info/ because the latter is
-// aggressively rate limited (429) while topsearch is not.
+// Both /api/v1/web/search/topsearch/ and /api/v1/users/web_profile_info/ now
+// answer 404, so read the id the profile page itself embeds as "profile_id".
+// The page is fetched fresh rather than read from `document`, because
+// Instagram navigates client-side and the loaded HTML can belong to an
+// earlier profile.
 async function fetchUserId(username, signal) {
-  const json = await igFetch(
-    `https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&include_reel=false&query=${encodeURIComponent(
-      username
-    )}`,
-    signal,
-    "Profile lookup"
+  const res = await fetch(
+    `https://www.instagram.com/${encodeURIComponent(username)}/`,
+    { credentials: "include", signal }
   );
+  if (!res.ok) throw new Error(`Profile lookup request failed (HTTP ${res.status}).`);
 
-  // Search is fuzzy, so match the username exactly rather than trusting the
-  // first hit, which can be a different account.
-  const hit = (json.users || []).find(
-    (entry) =>
-      entry.user &&
-      entry.user.username &&
-      entry.user.username.toLowerCase() === username.toLowerCase()
-  );
-  if (!hit) throw new Error(`Could not find the profile "${username}".`);
-  return String(hit.user.pk);
+  const match = (await res.text()).match(/"profile_id":"(\d+)"/);
+  if (!match) throw new Error(`Could not find the profile "${username}".`);
+  return match[1];
 }
 
 function listUrl(userId, kind, pageSize, maxId) {

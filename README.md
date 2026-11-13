@@ -1,5 +1,9 @@
 # IDGAF-google-extension
 
+> **Last updated at 100% on: 13 November 2026**
+>
+> ⚠️ **Attention:** I don't check that it works every day. If it stops working, it probably needs an update — Instagram may have changed its endpoints or something else.
+
 ## Description
 
 **ONLY WEB VERSION**
